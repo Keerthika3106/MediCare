@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
+import axios from 'axios';
+import { useAuth } from './AuthContext';
 
 interface Medicine {
   id: string;
@@ -67,124 +69,115 @@ interface DataContextType {
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
-// Demo data
-const initialPatients: Patient[] = [
-  {
-    id: 'PAT001',
-    name: 'John Smith',
-    age: 45,
-    phone: '+1-555-0102',
-    email: 'patient@medicare.com',
-    healthIssue: 'Hypertension',
-    doctorId: 'DOC001',
-    caretakerId: 'CAR001',
-    familyMembers: ['FAM001']
-  },
-  {
-    id: 'PAT002',
-    name: 'Mary Johnson',
-    age: 62,
-    phone: '+1-555-0106',
-    email: 'mary@medicare.com',
-    healthIssue: 'Diabetes Type 2',
-    doctorId: 'DOC001'
-  }
-];
-
-const initialPrescriptions: Prescription[] = [
-  {
-    id: 'PRE001',
-    patientId: 'PAT001',
-    doctorId: 'DOC001',
-    date: '2024-01-15',
-    status: 'active',
-    notes: 'Continue for 30 days, monitor blood pressure',
-    medicines: [
-      {
-        id: 'MED001',
-        name: 'Lisinopril',
-        dosage: '10mg',
-        frequency: 'Once daily',
-        instructions: 'Take in the morning',
-        beforeFood: false,
-        startDate: '2024-01-15',
-        endDate: '2024-02-15'
-      },
-      {
-        id: 'MED002',
-        name: 'Aspirin',
-        dosage: '81mg',
-        frequency: 'Once daily',
-        instructions: 'Take with food',
-        beforeFood: false,
-        startDate: '2024-01-15',
-        endDate: '2024-02-15'
-      }
-    ]
-  }
-];
-
-const initialAppointments: Appointment[] = [
-  {
-    id: 'APP001',
-    patientId: 'PAT001',
-    doctorId: 'DOC001',
-    date: '2024-01-20',
-    time: '10:00 AM',
-    status: 'confirmed',
-    reason: 'Follow-up visit'
-  },
-  {
-    id: 'APP002',
-    patientId: 'PAT002',
-    doctorId: 'DOC001',
-    date: '2024-01-22',
-    time: '2:00 PM',
-    status: 'pending',
-    reason: 'Regular check-up'
-  }
-];
-
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [patients] = useState<Patient[]>(initialPatients);
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>(initialPrescriptions);
-  const [appointments, setAppointments] = useState<Appointment[]>(initialAppointments);
+  const { user } = useAuth();
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [medicineIntakes, setMedicineIntakes] = useState<MedicineIntake[]>([]);
 
-  const addPrescription = (prescription: Omit<Prescription, 'id'>) => {
-    const newPrescription = {
-      ...prescription,
-      id: `PRE${String(prescriptions.length + 1).padStart(3, '0')}`
-    };
-    setPrescriptions(prev => [...prev, newPrescription]);
+  // Fetch data functions
+  const fetchPrescriptions = async () => {
+    try {
+      const response = await axios.get('/prescriptions');
+      if (response.data.success) {
+        setPrescriptions(response.data.prescriptions);
+      }
+    } catch (error) {
+      console.error('Error fetching prescriptions:', error);
+    }
   };
 
-  const updateMedicineIntake = (intakeId: string, status: 'taken' | 'missed' | 'skipped', confirmedBy?: string) => {
-    setMedicineIntakes(prev =>
-      prev.map(intake =>
-        intake.id === intakeId
-          ? { ...intake, status, takenTime: status === 'taken' ? new Date().toISOString() : undefined, confirmedBy }
-          : intake
-      )
-    );
+  const fetchAppointments = async () => {
+    try {
+      const response = await axios.get('/appointments');
+      if (response.data.success) {
+        setAppointments(response.data.appointments);
+      }
+    } catch (error) {
+      console.error('Error fetching appointments:', error);
+    }
   };
 
-  const addAppointment = (appointment: Omit<Appointment, 'id'>) => {
-    const newAppointment = {
-      ...appointment,
-      id: `APP${String(appointments.length + 1).padStart(3, '0')}`
-    };
-    setAppointments(prev => [...prev, newAppointment]);
+  const fetchMedicineIntakes = async () => {
+    try {
+      const response = await axios.get('/medicine-intakes');
+      if (response.data.success) {
+        setMedicineIntakes(response.data.intakes);
+      }
+    } catch (error) {
+      console.error('Error fetching medicine intakes:', error);
+    }
   };
 
-  const updateAppointmentStatus = (appointmentId: string, status: Appointment['status']) => {
-    setAppointments(prev =>
-      prev.map(appointment =>
-        appointment.id === appointmentId
-          ? { ...appointment, status }
-          : appointment
-      )
-    );
+  // Load data when user changes
+  React.useEffect(() => {
+    if (user) {
+      fetchPrescriptions();
+      fetchAppointments();
+      fetchMedicineIntakes();
+    }
+  }, [user]);
+
+  const addPrescription = async (prescription: Omit<Prescription, 'id'>) => {
+    try {
+      const response = await axios.post('/prescriptions', prescription);
+      if (response.data.success) {
+        setPrescriptions(prev => [...prev, response.data.prescription]);
+        return response.data.prescription;
+      }
+    } catch (error) {
+      console.error('Error adding prescription:', error);
+      throw error;
+    }
+  };
+
+  const updateMedicineIntake = async (intakeId: string, status: 'taken' | 'missed' | 'skipped', confirmedBy?: string) => {
+    try {
+      const response = await axios.put(`/medicine-intakes/${intakeId}`, {
+        status,
+        takenTime: status === 'taken' ? new Date().toISOString() : undefined
+      });
+      if (response.data.success) {
+        setMedicineIntakes(prev =>
+          prev.map(intake =>
+            intake.id === intakeId ? response.data.intake : intake
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error updating medicine intake:', error);
+      throw error;
+    }
+  };
+
+  const addAppointment = async (appointment: Omit<Appointment, 'id'>) => {
+    try {
+      const response = await axios.post('/appointments', appointment);
+      if (response.data.success) {
+        setAppointments(prev => [...prev, response.data.appointment]);
+        return response.data.appointment;
+      }
+    } catch (error) {
+      console.error('Error adding appointment:', error);
+      throw error;
+    }
+  };
+
+  const updateAppointmentStatus = async (appointmentId: string, status: Appointment['status']) => {
+    try {
+      const response = await axios.put(`/appointments/${appointmentId}`, { status });
+      if (response.data.success) {
+        setAppointments(prev =>
+          prev.map(appointment =>
+            appointment.id === appointmentId ? response.data.appointment : appointment
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error updating appointment status:', error);
+      throw error;
+    }
   };
 
   const value = {
